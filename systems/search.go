@@ -13,12 +13,12 @@ import (
 // var root = makeTreeNode()
 var root = treeNode{ // Root is a bit special, let's just avoid having to make things dynamically.
 	Children: make(map[byte]treeNode, 0),
-	Values:   make([]int64, 0),
+	IsSystem: false,
 }
 
 type treeNode struct {
 	Children map[byte]treeNode
-	Values   []int64
+	IsSystem bool
 }
 
 // BuildNameSearchTree reads the input file and builds a search tree with the name.
@@ -104,68 +104,15 @@ func addSystem(system SystemLine) {
 		node = node.Children[char]
 	}
 
-	if node.Values == nil {
-		node.Values = make([]int64, 0)
-	}
-
-	node.Values = append(node.Values, system.ID64)
+	node.IsSystem = true
 	parent.Children[nodeChar] = node
 }
 
 func makeTreeNode() treeNode {
 	return treeNode{
 		Children: nil, // make(map[byte]treeNode, 0),
-		Values:   nil, // make([]int64, 0),
+		IsSystem: false,
 	}
-}
-
-// SearchTreeForIDs searches through the generated tree and returns a list of potential matches ID's..
-func SearchTreeForIDs(input string) []int64 {
-	inputLength := len(input)
-	result := make([]int64, 0)
-
-	// Traverse the tree
-	node := root
-	for i := 0; i < inputLength; i++ {
-		char := input[i]
-
-		if node.Children == nil {
-			return result
-		} else if val, ok := node.Children[char]; ok {
-			node = val
-		} else {
-			return result
-		}
-	}
-
-	// Add exact matches
-	if node.Values != nil {
-		result = append(result, node.Values...)
-	}
-
-	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
-	if node.Children != nil {
-		for _, v := range node.Children {
-			result = append(result, returnChildrenValues(v)...)
-		}
-	}
-
-	return result
-}
-
-func returnChildrenValues(node treeNode) []int64 {
-	// This is currently depth-first, a width-first search might be better ofr our use case.
-	results := make([]int64, 0)
-	if node.Values != nil {
-		results = append(results, node.Values...)
-	}
-
-	if node.Children != nil {
-		for _, v := range node.Children {
-			results = append(results, returnChildrenValues(v)...)
-		}
-	}
-	return results
 }
 
 // SearchTreeForNames searches through the generated tree and returns a list of potential match names.
@@ -189,7 +136,7 @@ func SearchTreeForNames(input string) []string {
 	}
 
 	// Add exact match, if any
-	if node.Values != nil && len(node.Values) != 0 {
+	if node.IsSystem {
 		result = append(result, input)
 	}
 
@@ -208,7 +155,7 @@ func SearchTreeForNames(input string) []string {
 func returnChildrenNames(node treeNode, nameBuffer bytes.Buffer) []string {
 	// This is currently depth-first, a width-first search might be better for our use case.
 	results := make([]string, 0)
-	if node.Values != nil && len(node.Values) != 0 {
+	if node.IsSystem {
 		results = append(results, nameBuffer.String())
 	}
 
