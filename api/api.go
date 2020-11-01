@@ -21,8 +21,19 @@ func RunAPI() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No input."})
 			return
 		}
-		results := systems.SearchTree(strings.TrimSpace(input))
+		results := systems.SearchTreeForIDs(strings.TrimSpace(input))
 		c.JSON(200, results)
 	})
+
+	r.GET("/typeahead", func(c *gin.Context) {
+		input, exists := c.GetQuery("input")
+		if !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No input."})
+			return
+		}
+		results := systems.SearchTreeForNames(strings.TrimSpace(input))
+		c.JSON(200, results)
+	})
+
 	r.Run()
 }

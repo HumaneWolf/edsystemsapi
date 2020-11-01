@@ -1,10 +1,9 @@
 package systems
 
 import (
+	"bytes"
 	"encoding/csv"
-	"encoding/json"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -48,6 +47,7 @@ func BuildNameSearchTree() {
 	log.Printf("System list header read, name=%d, id=%d.\n", nameIndex, idIndex)
 
 	counter := 0
+	noID64 := 0
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -59,25 +59,26 @@ func BuildNameSearchTree() {
 
 		id, err := strconv.ParseInt(record[idIndex], 10, 64)
 		if err != nil {
-			log.Fatalf("Failed to parse system ID: %s", err)
+			// todo: Handle systems without an ID64?
+			// log.Printf("Failed to parse system ID: %s\n", err)
+			noID64++
+			continue
 		}
 		system := SystemLine{ID64: id, Name: record[nameIndex]}
 		addSystem(system)
 
 		counter++
-		// log.Printf("Added system %s (%d)\n", system.Name, system.ID64)
 	}
 
-	dumpFile, _ := json.MarshalIndent(root, "", " ")
-	_ = ioutil.WriteFile("dump.json", dumpFile, 0644)
-
-	log.Printf("System tree done. %d systems added.\n", counter)
+	log.Printf("System tree done. %d systems added. %d skipped for missing ID64\n", counter, noID64)
 }
 
 // Helper functions
 func addSystem(system SystemLine) {
 	nameLength := len(system.Name)
 
+	parent := root
+	var nodeChar byte
 	node := root
 	for i := 0; i < nameLength; i++ {
 		char := system.Name[i]
@@ -85,10 +86,13 @@ func addSystem(system SystemLine) {
 		if _, ok := node.Children[char]; !ok {
 			node.Children[char] = makeTreeNode()
 		}
+		parent = node
+		nodeChar = char
 		node = node.Children[char]
 	}
 
 	node.Values = append(node.Values, system.ID64)
+	parent.Children[nodeChar] = node
 }
 
 func makeTreeNode() treeNode {
@@ -98,8 +102,8 @@ func makeTreeNode() treeNode {
 	}
 }
 
-// SearchTree searches through the generated tree.
-func SearchTree(input string) []int64 {
+// SearchTreeForIDs searches through the generated tree and returns a list of potential matches ID's..
+func SearchTreeForIDs(input string) []int64 {
 	inputLength := len(input)
 	result := make([]int64, 0)
 
@@ -116,9 +120,71 @@ func SearchTree(input string) []int64 {
 	}
 
 	// Add exact matches
-	for i := 0; i < len(node.Values); i++ {
-		result = append(result, node.Values[i])
+	result = append(result, node.Values...)
+
+	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
+	for _, v := range node.Children {
+		result = append(result, returnChildrenValues(v)...)
 	}
 
 	return result
+}
+
+func returnChildrenValues(node treeNode) []int64 {
+	// This is currently depth-first, a width-first search might be better ofr our use case.
+	results := make([]int64, 0)
+	results = append(results, node.Values...)
+
+	for _, v := range node.Children {
+		results = append(results, returnChildrenValues(v)...)
+	}
+	return results
+}
+
+// SearchTreeForNames searches through the generated tree and returns a list of potential match names.
+func SearchTreeForNames(input string) []string {
+	inputLength := len(input)
+	result := make([]string, 0)
+
+	// Traverse the tree
+	nameBuffer := bytes.NewBufferString(input)
+	node := root
+	for i := 0; i < inputLength; i++ {
+		char := input[i]
+
+		if val, ok := node.Children[char]; ok {
+			node = val
+		} else {
+			return result
+		}
+	}
+
+	// Add exact match, if any
+	if len(node.Values) != 0 {
+		result = append(result, input)
+	}
+
+	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
+	for k, v := range node.Children {
+		tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
+		tempNameBuffer.WriteByte(k)
+		result = append(result, returnChildrenNames(v, *tempNameBuffer)...)
+	}
+
+	return result
+}
+
+func returnChildrenNames(node treeNode, nameBuffer bytes.Buffer) []string {
+	// This is currently depth-first, a width-first search might be better for our use case.
+	results := make([]string, 0)
+	if len(node.Values) != 0 {
+		results = append(results, nameBuffer.String())
+	}
+
+	for k, v := range node.Children {
+		tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
+		tempNameBuffer.WriteByte(k)
+		results = append(results, returnChildrenNames(v, *tempNameBuffer)...)
+	}
+	return results
 }
