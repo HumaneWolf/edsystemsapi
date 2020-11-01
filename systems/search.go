@@ -10,7 +10,11 @@ import (
 )
 
 // Define our nodes and tree root.
-var root = makeTreeNode()
+// var root = makeTreeNode()
+var root = treeNode{ // Root is a bit special, let's just avoid having to make things dynamically.
+	Children: make(map[byte]treeNode, 0),
+	Values:   make([]int64, 0),
+}
 
 type treeNode struct {
 	Children map[byte]treeNode
@@ -83,12 +87,25 @@ func addSystem(system SystemLine) {
 	for i := 0; i < nameLength; i++ {
 		char := system.Name[i]
 
+		if node.Children == nil {
+			node.Children = make(map[byte]treeNode, 1)
+		}
+
 		if _, ok := node.Children[char]; !ok {
 			node.Children[char] = makeTreeNode()
 		}
+
+		if &parent != &root { // Save this node at it's parent, in case of any changes we make. Root is different.
+			parent.Children[nodeChar] = node
+		}
+
 		parent = node
 		nodeChar = char
 		node = node.Children[char]
+	}
+
+	if node.Values == nil {
+		node.Values = make([]int64, 0)
 	}
 
 	node.Values = append(node.Values, system.ID64)
@@ -97,8 +114,8 @@ func addSystem(system SystemLine) {
 
 func makeTreeNode() treeNode {
 	return treeNode{
-		Children: make(map[byte]treeNode, 0),
-		Values:   make([]int64, 0),
+		Children: nil, // make(map[byte]treeNode, 0),
+		Values:   nil, // make([]int64, 0),
 	}
 }
 
@@ -112,7 +129,9 @@ func SearchTreeForIDs(input string) []int64 {
 	for i := 0; i < inputLength; i++ {
 		char := input[i]
 
-		if val, ok := node.Children[char]; ok {
+		if node.Children == nil {
+			return result
+		} else if val, ok := node.Children[char]; ok {
 			node = val
 		} else {
 			return result
@@ -120,11 +139,15 @@ func SearchTreeForIDs(input string) []int64 {
 	}
 
 	// Add exact matches
-	result = append(result, node.Values...)
+	if node.Values != nil {
+		result = append(result, node.Values...)
+	}
 
 	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
-	for _, v := range node.Children {
-		result = append(result, returnChildrenValues(v)...)
+	if node.Children != nil {
+		for _, v := range node.Children {
+			result = append(result, returnChildrenValues(v)...)
+		}
 	}
 
 	return result
@@ -133,10 +156,14 @@ func SearchTreeForIDs(input string) []int64 {
 func returnChildrenValues(node treeNode) []int64 {
 	// This is currently depth-first, a width-first search might be better ofr our use case.
 	results := make([]int64, 0)
-	results = append(results, node.Values...)
+	if node.Values != nil {
+		results = append(results, node.Values...)
+	}
 
-	for _, v := range node.Children {
-		results = append(results, returnChildrenValues(v)...)
+	if node.Children != nil {
+		for _, v := range node.Children {
+			results = append(results, returnChildrenValues(v)...)
+		}
 	}
 	return results
 }
@@ -152,7 +179,9 @@ func SearchTreeForNames(input string) []string {
 	for i := 0; i < inputLength; i++ {
 		char := input[i]
 
-		if val, ok := node.Children[char]; ok {
+		if node.Children == nil {
+			return result
+		} else if val, ok := node.Children[char]; ok {
 			node = val
 		} else {
 			return result
@@ -160,15 +189,17 @@ func SearchTreeForNames(input string) []string {
 	}
 
 	// Add exact match, if any
-	if len(node.Values) != 0 {
+	if node.Values != nil && len(node.Values) != 0 {
 		result = append(result, input)
 	}
 
 	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
-	for k, v := range node.Children {
-		tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
-		tempNameBuffer.WriteByte(k)
-		result = append(result, returnChildrenNames(v, *tempNameBuffer)...)
+	if node.Children != nil {
+		for k, v := range node.Children {
+			tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
+			tempNameBuffer.WriteByte(k)
+			result = append(result, returnChildrenNames(v, *tempNameBuffer)...)
+		}
 	}
 
 	return result
@@ -177,14 +208,16 @@ func SearchTreeForNames(input string) []string {
 func returnChildrenNames(node treeNode, nameBuffer bytes.Buffer) []string {
 	// This is currently depth-first, a width-first search might be better for our use case.
 	results := make([]string, 0)
-	if len(node.Values) != 0 {
+	if node.Values != nil && len(node.Values) != 0 {
 		results = append(results, nameBuffer.String())
 	}
 
-	for k, v := range node.Children {
-		tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
-		tempNameBuffer.WriteByte(k)
-		results = append(results, returnChildrenNames(v, *tempNameBuffer)...)
+	if node.Children != nil {
+		for k, v := range node.Children {
+			tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
+			tempNameBuffer.WriteByte(k)
+			results = append(results, returnChildrenNames(v, *tempNameBuffer)...)
+		}
 	}
 	return results
 }
