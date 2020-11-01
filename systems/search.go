@@ -1,7 +1,7 @@
 package systems
 
 import (
-	"bytes"
+	"encoding/binary"
 	"encoding/csv"
 	"io"
 	"log"
@@ -9,16 +9,129 @@ import (
 	"strconv"
 )
 
-// Define our nodes and tree root.
-// var root = makeTreeNode()
-var root = treeNode{ // Root is a bit special, let's just avoid having to make things dynamically.
-	Children: make(map[byte]treeNode, 0),
-	IsSystem: false,
-}
+var data = make([]byte, 0)
+
+const (
+	characterOffset   = 0
+	childOffsetOffset = characterOffset + 1
+	nextOffsetOffset  = childOffsetOffset + 8
+	systemCountOffset = nextOffsetOffset + 8
+
+	nodeSize = systemCountOffset + 4
+)
+
+// todo: For when there are too many systems for this method, split the dataset into files and load the appropriate one based on the offset.
+// offset / (100_000_000*21) = offst / (100 million * node size), adds up to close enough to the int32 limit.
+// When that time comes: Update readnode, updatenode, and appendnode to work with new structure.
+// Just filling one file then the next should be good enough, we'll probably read one file a lot, then the next, etc.
 
 type treeNode struct {
-	Children map[byte]treeNode
-	IsSystem bool
+	Character      byte  // 1 byte
+	ChildOffset    int64 // 8 bytes
+	NextNodeOffset int64 // 8 bytes
+	SystemCount    int32 // 4 bytes
+}
+
+func readNode(offset int64) treeNode {
+	rawData := data[offset : offset+nodeSize]
+
+	char := rawData[characterOffset:childOffsetOffset]
+	childOffset, _ := binary.Varint(rawData[childOffsetOffset:nextOffsetOffset])
+	nextOffset, _ := binary.Varint(rawData[nextOffsetOffset:systemCountOffset])
+	systemCount, _ := binary.Varint(rawData[systemCountOffset:])
+
+	return treeNode{
+		Character:      char[0],
+		ChildOffset:    childOffset,
+		NextNodeOffset: nextOffset,
+		SystemCount:    int32(systemCount),
+	}
+}
+
+func updateNode(offset int64, node treeNode) {
+	rawData := make([]byte, 0)
+
+	rawData = append(rawData, node.Character)
+
+	childOffsetBuffer := make([]byte, 8)
+	binary.PutVarint(childOffsetBuffer, node.ChildOffset)
+	rawData = append(rawData, childOffsetBuffer...)
+
+	nextNodeBuffer := make([]byte, 8)
+	binary.PutVarint(nextNodeBuffer, node.NextNodeOffset)
+	rawData = append(rawData, nextNodeBuffer...)
+
+	systemCountBuffer := make([]byte, 4)
+	binary.PutVarint(systemCountBuffer, int64(node.SystemCount))
+	rawData = append(rawData, systemCountBuffer...)
+
+	for i := 0; i < len(rawData); i++ {
+		// todo: When we can deal with int64, we have to update this.
+		data[int(offset)+i] = rawData[i]
+	}
+}
+
+func appendNode(node treeNode) int64 {
+	rawData := make([]byte, 0)
+
+	rawData = append(rawData, node.Character)
+
+	childOffsetBuffer := make([]byte, 8)
+	binary.PutVarint(childOffsetBuffer, node.ChildOffset)
+	rawData = append(rawData, childOffsetBuffer...)
+
+	nextNodeBuffer := make([]byte, 8)
+	binary.PutVarint(nextNodeBuffer, node.NextNodeOffset)
+	rawData = append(rawData, nextNodeBuffer...)
+
+	systemCountBuffer := make([]byte, 4)
+	binary.PutVarint(systemCountBuffer, int64(node.SystemCount))
+	rawData = append(rawData, systemCountBuffer...)
+
+	offset := len(data)
+	data = append(data, rawData...)
+
+	return int64(offset)
+}
+
+func findOrCreateCharacterNode(startOffset int64, character byte) (int64, treeNode) {
+	offset := startOffset
+
+	for {
+		node := readNode(offset)
+
+		if node.Character == character {
+			return offset, node
+		} else if node.NextNodeOffset == -1 {
+			newNode := treeNode{
+				Character:      character,
+				ChildOffset:    -1, // No child
+				NextNodeOffset: -1, // No next node
+				SystemCount:    0,
+			}
+			node.NextNodeOffset = appendNode(newNode) // Add new node
+			updateNode(offset, node)                  // Update current node
+			return node.NextNodeOffset, newNode
+		} else {
+			offset = node.NextNodeOffset
+		}
+	}
+}
+
+func findCharacterNode(startOffset int64, character byte) *treeNode {
+	offset := startOffset
+
+	for {
+		node := readNode(offset)
+
+		if node.Character == character {
+			return &node
+		} else if node.NextNodeOffset == -1 {
+			return nil
+		} else {
+			offset = node.NextNodeOffset
+		}
+	}
 }
 
 // BuildNameSearchTree reads the input file and builds a search tree with the name.
@@ -50,6 +163,14 @@ func BuildNameSearchTree() {
 
 	log.Printf("System list header read, name=%d, id=%d.\n", nameIndex, idIndex)
 
+	// Add a start node to simplify the adding of systems.
+	appendNode(treeNode{
+		Character:      'a',
+		ChildOffset:    -1, // No child
+		NextNodeOffset: -1, // No next node
+		SystemCount:    0,
+	})
+
 	counter := 0
 	noID64 := 0
 	for {
@@ -79,92 +200,106 @@ func BuildNameSearchTree() {
 
 // Helper functions
 func addSystem(system SystemLine) {
-	nameLength := len(system.Name)
-
-	parent := root
-	var nodeChar byte
-	node := root
-	for i := 0; i < nameLength; i++ {
+	offset := int64(0)
+	childOffset := int64(0)
+	var node treeNode
+	for i := 0; i < len(system.Name); i++ {
 		char := system.Name[i]
 
-		if node.Children == nil {
-			node.Children = make(map[byte]treeNode, 1)
-		}
+		if childOffset == -1 { // If there is no child
+			newNode := treeNode{
+				Character:      char,
+				ChildOffset:    -1, // No child
+				NextNodeOffset: -1, // No next node
+				SystemCount:    0,
+			}
+			newOffset := appendNode(newNode)
+			node.ChildOffset = newOffset
+			updateNode(offset, node)
+			offset, node = newOffset, newNode
 
-		if _, ok := node.Children[char]; !ok {
-			node.Children[char] = makeTreeNode()
+		} else { // if there is a child.
+			offset, node = findOrCreateCharacterNode(childOffset, char)
 		}
-
-		if &parent != &root { // Save this node at it's parent, in case of any changes we make. Root is different.
-			parent.Children[nodeChar] = node
-		}
-
-		parent = node
-		nodeChar = char
-		node = node.Children[char]
+		childOffset = node.ChildOffset
 	}
 
-	node.IsSystem = true
-	parent.Children[nodeChar] = node
-}
-
-func makeTreeNode() treeNode {
-	return treeNode{
-		Children: nil, // make(map[byte]treeNode, 0),
-		IsSystem: false,
-	}
+	node.SystemCount++
+	updateNode(offset, node)
 }
 
 // SearchTreeForNames searches through the generated tree and returns a list of potential match names.
 func SearchTreeForNames(input string) []string {
-	inputLength := len(input)
 	result := make([]string, 0)
 
-	// Traverse the tree
-	nameBuffer := bytes.NewBufferString(input)
-	node := root
-	for i := 0; i < inputLength; i++ {
+	offset := int64(0)
+	var node *treeNode
+	var matchFullInput = false
+	for i := 0; i < len(input); i++ {
 		char := input[i]
+		node = findCharacterNode(offset, char)
 
-		if node.Children == nil {
-			return result
-		} else if val, ok := node.Children[char]; ok {
-			node = val
+		if node == nil {
+			break
+		} else if node.ChildOffset == -1 {
+			break
 		} else {
-			return result
+			offset = node.ChildOffset
+		}
+
+		if i == (len(input) - 1) {
+			matchFullInput = true
 		}
 	}
 
 	// Add exact match, if any
-	if node.IsSystem {
+	if matchFullInput && node.SystemCount != 0 {
 		result = append(result, input)
 	}
 
 	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
-	if node.Children != nil {
-		for k, v := range node.Children {
-			tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
-			tempNameBuffer.WriteByte(k)
-			result = append(result, returnChildrenNames(v, *tempNameBuffer)...)
-		}
+	if node.ChildOffset != -1 {
+		result = append(result, returnChildrenNames(node.ChildOffset, input)...)
 	}
 
 	return result
 }
 
-func returnChildrenNames(node treeNode, nameBuffer bytes.Buffer) []string {
+func returnChildrenNames(offset int64, name string) []string {
 	// This is currently depth-first, a width-first search might be better for our use case.
 	results := make([]string, 0)
-	if node.IsSystem {
-		results = append(results, nameBuffer.String())
+	node := readNode(offset)
+
+	// If this node is a system, add it.
+	if node.SystemCount != 0 {
+		results = append(results, name+string(node.Character))
 	}
 
-	if node.Children != nil {
-		for k, v := range node.Children {
-			tempNameBuffer := bytes.NewBuffer(nameBuffer.Bytes())
-			tempNameBuffer.WriteByte(k)
-			results = append(results, returnChildrenNames(v, *tempNameBuffer)...)
-		}
+	if node.NextNodeOffset != -1 {
+		r := returnChildrenNames(node.NextNodeOffset, name)
+		results = append(results, r...)
 	}
+
+	if node.ChildOffset != -1 {
+		r := returnChildrenNames(node.ChildOffset, name+string(node.Character))
+		results = append(results, r...)
+	}
+
 	return results
+}
+
+// IndexStats is a struct containing basic stats about the search engine.
+type IndexStats struct {
+	SizeBytes int
+	Nodes     int
+	NodeSize  int
+}
+
+// GetIndexStats gets some basic stats about the index.
+func GetIndexStats() IndexStats {
+	return IndexStats{
+		SizeBytes: len(data),
+		Nodes:     len(data) / nodeSize,
+		NodeSize:  nodeSize,
+	}
 }

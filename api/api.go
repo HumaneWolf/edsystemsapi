@@ -25,5 +25,9 @@ func RunAPI() {
 		c.JSON(200, results)
 	})
 
+	r.GET("/index_stats", func(c *gin.Context) {
+		c.JSON(200, systems.GetIndexStats())
+	})
+
 	r.Run()
 }
