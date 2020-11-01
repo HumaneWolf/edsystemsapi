@@ -12,8 +12,9 @@ import (
 func RunAPI() {
 	r := gin.Default()
 
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+	// Default includes these.
+	//r.Use(gin.Logger())
+	//r.Use(gin.Recovery())
 
 	r.GET("/typeahead", func(c *gin.Context) {
 		input, exists := c.GetQuery("input")

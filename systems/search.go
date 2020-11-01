@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 )
 
@@ -193,9 +194,14 @@ func BuildNameSearchTree() {
 		addSystem(system)
 
 		counter++
+
+		if counter%1_000_000 == 0 {
+			log.Printf("Tree progress: %d systems added.\n", counter)
+		}
 	}
 
 	log.Printf("System tree done. %d systems added. %d skipped for missing ID64\n", counter, noID64)
+	runtime.GC() // We can use quite a lot of memory during the tree creation, let's clean that up before we do serious work.
 }
 
 // Helper functions
@@ -239,26 +245,26 @@ func SearchTreeForNames(input string) []string {
 		char := input[i]
 		node = findCharacterNode(offset, char)
 
+		if i == (len(input) - 1) {
+			matchFullInput = true
+		}
+
 		if node == nil {
 			break
-		} else if node.ChildOffset == -1 {
+		} else if !matchFullInput && node.ChildOffset == -1 {
 			break
 		} else {
 			offset = node.ChildOffset
 		}
-
-		if i == (len(input) - 1) {
-			matchFullInput = true
-		}
 	}
 
 	// Add exact match, if any
-	if matchFullInput && node.SystemCount != 0 {
+	if matchFullInput && node != nil && node.SystemCount != 0 {
 		result = append(result, input)
 	}
 
 	// Time to find systems which start with the given input, for autocomplete purposes. Right now we'll just return all of them, might want to set max limit.
-	if node.ChildOffset != -1 {
+	if node != nil && node.ChildOffset != -1 {
 		result = append(result, returnChildrenNames(node.ChildOffset, input)...)
 	}
 
@@ -290,16 +296,18 @@ func returnChildrenNames(offset int64, name string) []string {
 
 // IndexStats is a struct containing basic stats about the search engine.
 type IndexStats struct {
-	SizeBytes int
-	Nodes     int
-	NodeSize  int
+	AllocatedCapacity int
+	SizeBytes         int
+	Nodes             int
+	NodeSize          int
 }
 
 // GetIndexStats gets some basic stats about the index.
 func GetIndexStats() IndexStats {
 	return IndexStats{
-		SizeBytes: len(data),
-		Nodes:     len(data) / nodeSize,
-		NodeSize:  nodeSize,
+		AllocatedCapacity: cap(data),
+		SizeBytes:         len(data),
+		Nodes:             len(data) / nodeSize,
+		NodeSize:          nodeSize,
 	}
 }
