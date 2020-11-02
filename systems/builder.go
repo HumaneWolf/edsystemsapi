@@ -9,6 +9,16 @@ import (
 	"strconv"
 )
 
+// SystemLine represents line in the systems csv file.
+type systemLine struct {
+	ID64 int64
+	Name string
+
+	// X float64
+	// Y float64
+	// Z float64
+}
+
 func findOrCreateCharacterNode(startOffset int64, character byte) (int64, treeNode) {
 	offset := startOffset
 
@@ -88,7 +98,7 @@ func BuildNameSearchTree() {
 			noID64++
 			continue
 		}
-		system := SystemLine{ID64: id, Name: record[nameIndex]}
+		system := systemLine{ID64: id, Name: record[nameIndex]}
 		addSystem(system)
 
 		counter++
@@ -103,7 +113,7 @@ func BuildNameSearchTree() {
 }
 
 // Helper functions
-func addSystem(system SystemLine) {
+func addSystem(system systemLine) {
 	offset := int64(0)
 	childOffset := int64(0)
 	var node treeNode
