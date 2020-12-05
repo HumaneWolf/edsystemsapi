@@ -33,7 +33,6 @@ type treeNode struct {
 	SystemCount    int32 // 4 bytes
 }
 
-// todo: Handle writeable better, if we want to be able to write and read from the web
 func getFileAndOffset(offset int64) (*os.File, int64, int) {
 	cfg := config.LoadConfig()
 
