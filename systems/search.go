@@ -78,18 +78,17 @@ func returnChildrenNames(offset int64, name string) []string {
 
 // IndexStats is a struct containing basic stats about the search engine.
 type IndexStats struct {
-	AllocatedCapacity int
-	SizeBytes         int
-	Nodes             int
-	NodeSize          int
+	SizeBytes int64
+	Nodes     int64
+	NodeSize  int
 }
 
 // GetIndexStats gets some basic stats about the index.
 func GetIndexStats() IndexStats {
+	totalSize := getTotalSize()
 	return IndexStats{
-		AllocatedCapacity: cap(data),
-		SizeBytes:         len(data),
-		Nodes:             len(data) / nodeSize,
-		NodeSize:          nodeSize,
+		SizeBytes: totalSize,
+		Nodes:     totalSize / nodeSize,
+		NodeSize:  nodeSize,
 	}
 }

@@ -1,8 +1,16 @@
 package systems
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 
-var data = make([]byte, 0)
+	"humanewolf.com/ed/systemapi/config"
+)
+
+var fileHandles = make(map[int]*os.File, 0)
 
 const (
 	characterOffset   = 0
@@ -25,8 +33,53 @@ type treeNode struct {
 	SystemCount    int32 // 4 bytes
 }
 
+// todo: Handle writeable better, if we want to be able to write and read from the web
+func getFileAndOffset(offset int64) (*os.File, int64, int) {
+	cfg := config.LoadConfig()
+
+	fileMaxSize := cfg.FileStore.SystemsPerFile * nodeSize
+	fileNumber := int(offset / int64(fileMaxSize))
+	internalOffset := offset % int64(fileMaxSize)
+
+	if file, exists := fileHandles[fileNumber]; exists {
+		return file, internalOffset, fileNumber
+	}
+
+	fileName := fmt.Sprintf("%s/typeahead/index.%d.dat", cfg.FileStore.Path, fileNumber)
+
+	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0775)
+	if err != nil {
+		log.Fatalf("Failed to open referenced index file: %s\n", err)
+	}
+
+	fileHandles[fileNumber] = file
+	return file, internalOffset, fileNumber
+}
+
+func getTotalSize() int64 {
+	cfg := config.LoadConfig()
+	totalSize := int64(0)
+
+	filepath.Walk(fmt.Sprintf("%s/typeahead/", cfg.FileStore.Path), func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		// todo: Handle if someone for some reason has put unrelated files in this folder.
+		totalSize += info.Size()
+		return nil
+	})
+
+	return totalSize
+}
+
 func readNode(offset int64) treeNode {
-	rawData := data[offset : offset+nodeSize]
+	rawData := make([]byte, nodeSize)
+
+	file, internalOffset, fileNumber := getFileAndOffset(offset)
+	_, err := file.ReadAt(rawData, internalOffset)
+	if err != nil {
+		log.Fatalf("Failed to read node from index file (file number: %d, internal offset: %d): %s\n", fileNumber, internalOffset, err)
+	}
 
 	char := rawData[characterOffset:childOffsetOffset]
 	childOffset, _ := binary.Varint(rawData[childOffsetOffset:nextOffsetOffset])
@@ -59,8 +112,11 @@ func updateNode(offset int64, node treeNode) {
 	rawData = append(rawData, systemCountBuffer...)
 
 	for i := 0; i < len(rawData); i++ {
-		// todo: When we can deal with int64, we have to update this.
-		data[int(offset)+i] = rawData[i]
+		file, internalOffset, fileNumber := getFileAndOffset(offset)
+		_, err := file.WriteAt(rawData, internalOffset)
+		if err != nil {
+			log.Fatalf("Failed to update node in index file (file number: %d, internal offset: %d): %s\n", fileNumber, internalOffset, err)
+		}
 	}
 }
 
@@ -81,8 +137,19 @@ func appendNode(node treeNode) int64 {
 	binary.PutVarint(systemCountBuffer, int64(node.SystemCount))
 	rawData = append(rawData, systemCountBuffer...)
 
-	offset := len(data)
-	data = append(data, rawData...)
+	offset := getTotalSize()
+	file, internalOffset, fileNumber := getFileAndOffset(offset)
+	_, err := file.WriteAt(rawData, internalOffset)
+	if err != nil {
+		log.Fatalf("Failed to append node in index file (file number: %d, internal offset: %d): %s\n", fileNumber, internalOffset, err)
+	}
 
 	return int64(offset)
+}
+
+// CloseFiles closes the handles of active files.
+func CloseFiles() {
+	for _, file := range fileHandles {
+		file.Close()
+	}
 }

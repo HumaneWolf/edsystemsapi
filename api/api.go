@@ -10,6 +10,7 @@ import (
 
 // RunAPI starts the program's rest API.
 func RunAPI() {
+	defer systems.CloseFiles()
 	r := gin.Default()
 
 	// Default includes these already.
