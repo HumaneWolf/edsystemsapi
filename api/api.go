@@ -12,7 +12,7 @@ import (
 func RunAPI() {
 	r := gin.Default()
 
-	// Default includes these.
+	// Default includes these already.
 	//r.Use(gin.Logger())
 	//r.Use(gin.Recovery())
 
