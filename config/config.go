@@ -8,8 +8,9 @@ type AppConfig struct {
 
 // FileStoreConfig contains the configuration for storing data in files on disk.
 type FileStoreConfig struct {
-	Path           string
-	SystemsPerFile int
+	Path              string
+	SystemsPerFile    int
+	MemoryCacheMaxAge int
 }
 
 // AccessControlConfig defines the requirements for an incoming request to be handled.

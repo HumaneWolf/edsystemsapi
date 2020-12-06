@@ -45,6 +45,7 @@ func findOrCreateCharacterNode(startOffset int64, character byte) (int64, treeNo
 // BuildNameSearchTree reads the input file and builds a search tree with the name.
 func BuildNameSearchTree() {
 	defer CloseFiles()
+	go StartCacheCleaner()
 
 	if len(os.Args) <= 1 {
 		log.Fatalf("A raw data file name is required.")
@@ -107,7 +108,7 @@ func BuildNameSearchTree() {
 
 		counter++
 
-		if counter%1_000_000 == 0 {
+		if counter%1_000 == 0 {
 			log.Printf("Tree progress: %d systems added.\n", counter)
 		}
 	}

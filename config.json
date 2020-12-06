@@ -1,7 +1,8 @@
 {
     "FileStore": {
         "Path": "./data/",
-        "SystemsPerFile": 10000000
+        "SystemsPerFile": 10000000,
+        "MemoryCacheMaxAge": 300
     },
     "AccessControl": {
         "RequireAccessToken": false,
