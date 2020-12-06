@@ -10,6 +10,7 @@ import (
 	"humanewolf.com/ed/systemapi/config"
 )
 
+// todo: In memory node caching.
 var fileHandles = make(map[int]*os.File, 0)
 
 const (
@@ -117,6 +118,7 @@ func updateNode(offset int64, node treeNode) {
 	}
 }
 
+// todo: refactor this out of the app.
 func appendNode(node treeNode) int64 {
 	offset := getTotalSize()
 	updateNode(offset, node)
