@@ -88,12 +88,14 @@ func readNode(offset int64) treeNode {
 	nextOffset, _ := binary.Varint(rawData[nextOffsetOffset:systemCountOffset])
 	systemCount, _ := binary.Varint(rawData[systemCountOffset:])
 
-	return treeNode{
+	node := treeNode{
 		Character:      char[0],
 		ChildOffset:    childOffset,
 		NextNodeOffset: nextOffset,
 		SystemCount:    int32(systemCount),
 	}
+	saveCachedNode(offset, node)
+	return node
 }
 
 func updateNode(offset int64, node treeNode) {
