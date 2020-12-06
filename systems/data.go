@@ -21,10 +21,8 @@ const (
 	nodeSize = systemCountOffset + 4
 )
 
-// todo: For when there are too many systems for this method, split the dataset into files and load the appropriate one based on the offset.
+// Split the dataset into files and load the appropriate one based on the offset.
 // offset / (100_000_000*21) = offst / (100 million * node size), adds up to close enough to the int32 limit.
-// When that time comes: Update readnode, updatenode, and appendnode to work with new structure.
-// Just filling one file then the next should be good enough, we'll probably read one file a lot, then the next, etc.
 
 type treeNode struct {
 	Character      byte  // 1 byte
@@ -120,30 +118,9 @@ func updateNode(offset int64, node treeNode) {
 }
 
 func appendNode(node treeNode) int64 {
-	rawData := make([]byte, 0)
-
-	rawData = append(rawData, node.Character)
-
-	childOffsetBuffer := make([]byte, 8)
-	binary.PutVarint(childOffsetBuffer, node.ChildOffset)
-	rawData = append(rawData, childOffsetBuffer...)
-
-	nextNodeBuffer := make([]byte, 8)
-	binary.PutVarint(nextNodeBuffer, node.NextNodeOffset)
-	rawData = append(rawData, nextNodeBuffer...)
-
-	systemCountBuffer := make([]byte, 4)
-	binary.PutVarint(systemCountBuffer, int64(node.SystemCount))
-	rawData = append(rawData, systemCountBuffer...)
-
 	offset := getTotalSize()
-	file, internalOffset, fileNumber := getFileAndOffset(offset)
-	_, err := file.WriteAt(rawData, internalOffset)
-	if err != nil {
-		log.Fatalf("Failed to append node in index file (file number: %d, internal offset: %d): %s\n", fileNumber, internalOffset, err)
-	}
-
-	return int64(offset)
+	updateNode(offset, node)
+	return offset
 }
 
 // CloseFiles closes the handles of active files.

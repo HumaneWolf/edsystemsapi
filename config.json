@@ -1,7 +1,7 @@
 {
     "FileStore": {
         "Path": "./data/",
-        "SystemsPerFile": 100000000
+        "SystemsPerFile": 10000000
     },
     "AccessControl": {
         "RequireAccessToken": false,
