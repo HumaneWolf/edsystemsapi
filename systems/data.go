@@ -73,10 +73,6 @@ func getTotalSize() int64 {
 func readNode(offset int64) treeNode {
 	rawData := make([]byte, nodeSize)
 
-	if cachedNode := getCachedNode(offset); cachedNode != nil {
-		return *cachedNode
-	}
-
 	file, internalOffset, fileNumber := getFileAndOffset(offset)
 	_, err := file.ReadAt(rawData, internalOffset)
 	if err != nil {
@@ -88,14 +84,12 @@ func readNode(offset int64) treeNode {
 	nextOffset, _ := binary.Varint(rawData[nextOffsetOffset:systemCountOffset])
 	systemCount, _ := binary.Varint(rawData[systemCountOffset:])
 
-	node := treeNode{
+	return treeNode{
 		Character:      char[0],
 		ChildOffset:    childOffset,
 		NextNodeOffset: nextOffset,
 		SystemCount:    int32(systemCount),
 	}
-	saveCachedNode(offset, node)
-	return node
 }
 
 func updateNode(offset int64, node treeNode) {
@@ -122,7 +116,6 @@ func updateNode(offset int64, node treeNode) {
 			log.Fatalf("Failed to update node in index file (file number: %d, internal offset: %d): %s\n", fileNumber, internalOffset, err)
 		}
 	}
-	saveCachedNode(offset, node)
 }
 
 // todo: refactor this out of the app.

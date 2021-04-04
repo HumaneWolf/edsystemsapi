@@ -2,3 +2,5 @@
 /data/
 dump.json
 *.exe
+/build
+/serve

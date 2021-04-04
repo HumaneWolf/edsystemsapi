@@ -18,6 +18,5 @@ func RunAPI() {
 	r.GET("/typeahead", handleTypeahead)
 	r.GET("/index_stats", handleIndexStats)
 
-	go systems.StartCacheCleaner()
 	r.Run()
 }
